@@ -71,7 +71,7 @@ EXPOSE 5901
 EXPOSE 7541
 
 RUN mkdir /home/docker/Upsonic
-COPY Upsonic /home/docker/Upsonic
+COPY . /home/docker/Upsonic
 
 
 RUN python3.12 -m pip install --upgrade pip
