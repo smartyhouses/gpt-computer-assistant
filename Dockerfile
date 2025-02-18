@@ -81,7 +81,7 @@ RUN python3.12 -m pip install /home/docker/Upsonic[server]
 
 
 
-ADD Upsonic/wallpaper.png /home/docker/Pictures/wallpaper.png
+#ADD Upsonic/wallpaper.png /home/docker/Pictures/wallpaper.png
 
 # Configure VNC startup script
 RUN echo '#!/bin/bash\n\
