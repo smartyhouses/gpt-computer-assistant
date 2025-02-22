@@ -15,6 +15,7 @@ Focus on basic URL source validation:
 
 Source Verification:
 - Check if the source is come from the content. But dont make assumption just check the context and try to find exact things. If not flag it.
+- If you can see the things in the context everything okay (Trusted Source).
 
 IMPORTANT: If the URL source cannot be verified, flag it as suspicious.
 """
@@ -24,6 +25,7 @@ Focus on basic numerical validation:
 
 Number Verification:
 - Check if the source is come from the content. But dont make assumption just check the context and try to find exact things. If not flag it.
+- If you can see the things in the context everything okay (Trusted Source).
 
 IMPORTANT: If the numbers cannot be verified, flag them as suspicious.
 """
@@ -33,6 +35,7 @@ Focus on basic code validation:
 
 Code Verification:
 - Check if the source is come from the content. But dont make assumption just check the context and try to find exact things. If not flag it.
+- If you can see the things in the context everything okay (Trusted Source).
 
 IMPORTANT: If the code cannot be verified or appears suspicious, flag it as suspicious.
 """
@@ -42,6 +45,7 @@ Focus on basic information validation:
 
 Information Verification:
 - Check if the source is come from the content. But dont make assumption just check the context and try to find exact things. If not flag it.
+- If you can see the things in the context everything okay (Trusted Source).
 
 IMPORTANT: If the information cannot be verified, flag it as suspicious.
 """
@@ -238,12 +242,6 @@ class ReliabilityProcessor:
                     ("information_validation", information_validation_prompt),
                     ("code_validation", code_validation_prompt),
                 ]:
-                    validator_agent = AgentConfiguration(
-                        f"{validation_type.replace('_', ' ').title()} Agent",
-                        model=llm_model,
-                        sub_task=False
-                    )
-
                     # Create a list to store context strings
                     context_strings = []
                     
@@ -270,17 +268,36 @@ class ReliabilityProcessor:
                             else:
                                 pass
 
+                    # Add the current AI response to context
+                    context_strings.append(f"\nCurrent AI Response (Untrusted Source, last AI responose that we are checking now): {old_task_output}")
 
-                    # Create validation task with processed context
-                    context_strings.append(f"\nCurrent AI Response: {old_task_output}")
+                    # For URL validation, skip if no URLs are present
+                    if validation_type == "url_validation":
+                        if not contains_urls([prompt] + context_strings):
+                            # Set a default "no URLs found" validation point
+                            setattr(validation_result, validation_type, ValidationPoint(
+                                is_suspicious=False,
+                                feedback="No URLs found in content to validate",
+                                suspicious_points=[],
+                                source_reliability=SourceReliability.UNKNOWN,
+                                verification_method="regex_url_detection",
+                                confidence_score=1.0
+                            ))
+                            continue
 
-                    print("CONTEXT STRING", context_strings)
-                    
+                    validator_agent = AgentConfiguration(
+                        f"{validation_type.replace('_', ' ').title()} Agent",
+                        model=llm_model,
+                        sub_task=False
+                    )
+
                     validator_task = Task(
                         prompt,
                         response_format=ValidationPoint,
                         tools=task.tools,
-                        context=context_strings  # Pass the processed context strings
+                        context=context_strings,  # Pass the processed context strings
+                        price_id_=task.price_id,
+                        not_main_task=True
                     )
                     validator_agent.do(validator_task)
                     setattr(validation_result, validation_type, validator_task.response)
@@ -304,7 +321,9 @@ class ReliabilityProcessor:
                         formatted_prompt,
                         context=the_context,
                         response_format=task.response_format,
-                        tools=task.tools
+                        tools=task.tools,
+                        price_id_=task.price_id,
+                        not_main_task=True
                     )
                     editor_agent.do(editor_task)
                     return editor_task.response
@@ -312,3 +331,18 @@ class ReliabilityProcessor:
                 return result
 
         return processed_result
+
+def find_urls_in_text(text: str) -> List[str]:
+    """Find all URLs in the given text using regex pattern matching."""
+    # This pattern matches URLs starting with http://, https://, ftp://, or www.
+    url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+    return re.findall(url_pattern, text)
+
+def contains_urls(texts: List[str]) -> bool:
+    """Check if any of the provided texts contain URLs."""
+    for text in texts:
+        if not isinstance(text, str):
+            continue
+        if find_urls_in_text(text):
+            return True
+    return False
