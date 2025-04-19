@@ -5,6 +5,7 @@ from enum import Enum
 import re
 from urllib.parse import urlparse
 import requests
+import asyncio
 from .client.tasks.tasks import Task
 from .client.agent_configuration.agent_configuration import AgentConfiguration
 from .client.tasks.task_response import ObjectResponse
@@ -171,7 +172,7 @@ class ReliabilityProcessor:
         self.confidence_threshold = confidence_threshold
 
     @staticmethod
-    def process_result(
+    async def process_result(
         result: Any,
         reliability_layer: Optional[Any] = None,
         task: Optional[Task] = None,
@@ -235,42 +236,53 @@ class ReliabilityProcessor:
                     overall_feedback=""
                 )
 
-                # Run validations
+                # Create a list to store validation tasks
+                validation_tasks = []
+                validation_types = []
+                validator_agents = {}
+
+                # Process context strings once for all validations
+                context_strings = []
+                context_strings.append(f"Given Task: {copy_task.description}")
+
+                # Process context items if they exist
+                if copy_task.context:
+                    context_items = copy_task.context if isinstance(copy_task.context, list) else [copy_task.context]
+                    if copy_task.response_format:
+                        context_items.append(copy_task.response_format)
+                    for item in context_items:
+                        type_string = type(item).__name__
+                        the_class_string = None
+                        try:
+                            the_class_string = item.__bases__[0].__name__
+                        except:
+                            pass
+
+                        if the_class_string == ObjectResponse.__name__:
+                            context_strings.append(f"\n\nUser requested output: ```Requested Output {item.model_fields}```")
+                        elif isinstance(item, str):
+                            context_strings.append(f"\n\nContext That Came From User (Trusted Source): ```User given context {item}```")
+                        else:
+                            pass
+
+                # Add the current AI response to context
+                context_strings.append(f"\nCurrent AI Response (Untrusted Source, last AI responose that we are checking now): {old_task_output}")
+
+                # Prepare validation tasks
                 for validation_type, prompt in [
                     ("url_validation", url_validation_prompt),
                     ("number_validation", number_validation_prompt),
                     ("information_validation", information_validation_prompt),
                     ("code_validation", code_validation_prompt),
                 ]:
-                    # Create a list to store context strings
-                    context_strings = []
+                    # Create a specific agent for each validation type
+                    agent_name = f"{validation_type.replace('_', ' ').title()} Agent"
+                    validator_agents[validation_type] = AgentConfiguration(
+                        agent_name,
+                        model=llm_model,
+                        sub_task=False
+                    )
                     
-                    # Add the task and response format
-                    context_strings.append(f"Given Task: {copy_task.description}")
-
-                    # Process context items if they exist
-                    if copy_task.context:
-                        context_items = copy_task.context if isinstance(copy_task.context, list) else [copy_task.context]
-                        if copy_task.response_format:
-                            context_items.append(copy_task.response_format)
-                        for item in context_items:
-                            type_string = type(item).__name__
-                            the_class_string = None
-                            try:
-                                the_class_string = item.__bases__[0].__name__
-                            except:
-                                pass
-
-                            if the_class_string == ObjectResponse.__name__:
-                                context_strings.append(f"\n\nUser requested output: ```Requested Output {item.model_fields}```")
-                            elif isinstance(item, str):
-                                context_strings.append(f"\n\nContext That Came From User (Trusted Source): ```User given context {item}```")
-                            else:
-                                pass
-
-                    # Add the current AI response to context
-                    context_strings.append(f"\nCurrent AI Response (Untrusted Source, last AI responose that we are checking now): {old_task_output}")
-
                     # For URL validation, skip if no URLs are present
                     if validation_type == "url_validation":
                         if not contains_urls([prompt] + context_strings):
@@ -285,22 +297,36 @@ class ReliabilityProcessor:
                             ))
                             continue
 
-                    validator_agent = AgentConfiguration(
-                        f"{validation_type.replace('_', ' ').title()} Agent",
-                        model=llm_model,
-                        sub_task=False
-                    )
-
+                    # Create validation task
                     validator_task = Task(
                         prompt,
+                        images=task.images,
                         response_format=ValidationPoint,
                         tools=task.tools,
                         context=context_strings,  # Pass the processed context strings
                         price_id_=task.price_id,
                         not_main_task=True
                     )
-                    validator_agent.do(validator_task)
-                    setattr(validation_result, validation_type, validator_task.response)
+                    
+                    # Add task to the list
+                    validation_tasks.append(validator_task)
+                    validation_types.append(validation_type)
+
+                # Execute all validation tasks in parallel if there are any
+                if validation_tasks:
+                    # Run each validation task with its specific agent
+                    validation_coroutines = []
+                    for i, validation_type in enumerate(validation_types):
+                        validation_coroutines.append(
+                            validator_agents[validation_type].do_async(validation_tasks[i])
+                        )
+                    
+                    # Wait for all validation tasks to complete
+                    await asyncio.gather(*validation_coroutines)
+                    
+                    # Process results
+                    for i, validation_type in enumerate(validation_types):
+                        setattr(validation_result, validation_type, validation_tasks[i].response)
 
                 validation_result.calculate_suspicion()
 
@@ -319,13 +345,14 @@ class ReliabilityProcessor:
                     the_context += copy_task.context
                     editor_task = Task(
                         formatted_prompt,
+                        images=task.images,
                         context=the_context,
                         response_format=task.response_format,
                         tools=task.tools,
                         price_id_=task.price_id,
                         not_main_task=True
                     )
-                    editor_agent.do(editor_task)
+                    await editor_agent.do_async(editor_task)
                     return editor_task.response
 
                 return result

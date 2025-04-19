@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional, Union
 import traceback
 
 import pydantic_ai
-from ...api import app, timeout
+from ...api import app, timeout, handle_server_errors
 from ..agent import Agent
 import asyncio
 import cloudpickle
@@ -24,13 +24,12 @@ class AgentRequest(BaseModel):
     context: Optional[Any] = None
     llm_model: Optional[Any] = "openai/gpt-4o"
     system_prompt: Optional[Any] = None
-    retries: Optional[Any] = 1
     context_compress: Optional[Any] = False
     memory: Optional[Any] = False
 
 
 @app.post(f"{prefix}/agent")
-@timeout(500.0)  # 5 minutes timeout for AI operations
+@handle_server_errors
 async def call_agent(request: AgentRequest):
     """
     Endpoint to call GPT-4 with optional tools and MCP servers.
@@ -78,7 +77,6 @@ async def call_agent(request: AgentRequest):
             context=context,
             llm_model=request.llm_model,
             system_prompt=request.system_prompt,
-            retries=request.retries,
             context_compress=request.context_compress,
             memory=request.memory
         )

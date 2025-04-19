@@ -32,13 +32,50 @@ Upsonic is a next-generation framework that makes agents production-ready by sol
 
 1- **Reliability**: While other frameworks require expertise and complex coding for reliability features, Upsonic offers easy-to-activate reliability layers without disrupting functionality.
 
-2- **Model Context Protocol**: The MCP allows you to leverage tools with various functionalities developed both officially and by third parties without requiring you to build custom tools from scratch.
+2- **Model Context Protocol (MCP)**: The MCP allows you to leverage tools with various functionalities developed both officially and by third parties without requiring you to build custom tools from scratch.
 
-3- **Secure Runtime**: Isolated environment to run agents
+3- **Integrated Browser Use and Computer Use**: Directly use and deploy agents that works on non-API systems.
+
+4- **Secure Runtime**: Isolated environment to run agents
 
 ![sdk-server](https://github.com/user-attachments/assets/1b276199-ae60-4221-b8e6-b266443a3641)
 
 <br>
+
+## 📊 Reliability Layer
+
+LLM output reliability is critical, particularly for numerical operations and action execution. Upsonic addresses this through a multi-layered reliability system, enabling control agents and verification rounds to ensure output accuracy.
+
+**Verifier Agent**: Validates outputs, tasks, and formats - detecting inconsistencies, numerical errors, and hallucinations
+
+**Editor Agent**: Works with verifier feedback to revise and refine outputs until they meet quality standards
+
+**Rounds**: Implements iterative quality improvement through scored verification cycles
+
+**Loops**: Ensures accuracy through controlled feedback loops at critical reliability checkpoints
+
+
+Upsonic is a reliability-focused framework. The results in the table were generated with a small dataset. They show success rates in the transformation of JSON keys. No hard-coded changes were made to the frameworks during testing; only the existing features of each framework were activated and run. GPT-4o was used in the tests.
+
+10 transfers were performed for each section. The numbers show the error count. So if it says 7, it means 7 out of 10 were done **incorrectly**. The table has been created based on initial results. We are expanding the dataset. The tests will become more reliable after creating a larger test set. Reliability benchmark [repo](https://github.com/Upsonic/Reliability-Benchmark)
+
+
+| Name     | Reliability Score % | ASIN Code | HS Code | CIS Code | Marketing URL | Usage URL | Warranty Time | Policy Link | Policy Description |
+|-----------|--------------------|-----------|---------|----------|---------------|-----------|---------------|-------------|----------------|
+ **Upsonic**   |**99.3**      |0         |1       |0        |0             |0         |0             |0           |0                   |
+| **CrewAI**    |**87.5**       |0         |3       |2        |1             |1         |0             |1           |2                   |
+| **Langgraph** |**6.3**      |10        |10      |7        |10            |8         |10            |10          |10                  |
+
+
+```python
+class ReliabilityLayer:
+  prevent_hallucination = 10
+
+agent = Agent("Coder", reliability_layer=ReliabilityLayer, model="openai/gpt4o")
+```
+
+<br>
+
 
 **Key features:**
 
@@ -55,7 +92,7 @@ Upsonic is a next-generation framework that makes agents production-ready by sol
 
 # 📙 Documentation
 
-You can access our documentation at [docs.upsonic.ai](https://docs.upsonic.ai/). All concepts and examples are available there.
+You can access our documentation at [docs.upsonic.ai](https://docs.upsonic.ai/) All concepts and examples are available there.
 
 <br>
 
@@ -98,26 +135,6 @@ agent.print_do(task)
 <br>
 <br>
 
-
-## Reliability Layer
-
-LLM output reliability is critical, particularly for numerical operations and action execution. Upsonic addresses this through a multi-layered reliability system, enabling control agents and verification rounds to ensure output accuracy.
-
-**Verifier Agent**: Validates outputs, tasks, and formats - detecting inconsistencies, numerical errors, and hallucinations
-
-**Editor Agent**: Works with verifier feedback to revise and refine outputs until they meet quality standards
-
-**Rounds**: Implements iterative quality improvement through scored verification cycles
-
-**Loops**: Ensures accuracy through controlled feedback loops at critical reliability checkpoints
-
-```python
-class ReliabilityLayer:
-  prevent_hallucination = 10
-
-agent = Agent("Coder", reliability_layer=ReliabilityLayer)
-```
-
 ## Tool Integration via MCP
 
 Upsonic officially supports [Model Context Protocol (MCP)](https://github.com/modelcontextprotocol/servers) and custom tools. You can use hundreds of MCP servers at [glama](https://glama.ai/mcp/servers) or [mcprun](https://mcp.run) We also support Python functions inside a class as a tool. You can easily generate your integrations with that.
@@ -152,12 +169,12 @@ task = Task(
 )
     
 # Usage
-web_agent.print_do(task)
+result = web_agent.print_do(task)
 print(result.title)
 print(result.summary)
 
 ```
-
+<br>
 
 ## Agent with Multi-Task Example 
 
@@ -236,37 +253,26 @@ print(f"Outreach Message Content: {message_task.response.content}")
 
 ```
 
-
-
-
-
-
 ## Direct LLM Call
 
 Direct LLM calls offer faster, cheaper solutions for simple tasks. In Upsonic, you can make calls to model providers without any abstraction level and organize structured outputs. You can also use tools with LLM calls.
 
 ```python
-from upsonic import Direct
+from upsonic import Task, Direct
 
-Direct.do(task1)
+direct = Direct(model="openai/gpt-4o")
 
-```
+task = Task("Where can I use agents in real life?")
 
-## Reliable Computer Use
-Computer use can able to human task like humans, mouse move, mouse click, typing and scrolling and etc. So you can build tasks over non-API systems. It can help your linkedin cases, internal tools. Computer use is supported by only Claude for now.
-
-```python
-
-from upsonic.client.tools import ComputerUse
-
-...
-
-tools = [ComputerUse]
-...
+direct.print_do(task)
 
 ```
 
 <br>
+
+## Cookbook
+You can [check out many examples](https://github.com/Upsonic/cookbook) showing how to build agents using MCP tools and browser use with Upsonic.
+
 <br>
 
 ## Telemetry
@@ -282,7 +288,3 @@ os.environ["UPSONIC_TELEMETRY"] = "False"
 
 
 
-### Coming Soon
-
-- **Dockerized Server Deploy**
-- **Verifiers For Computer Use**

@@ -1,14 +1,20 @@
 from pydantic import BaseModel
 from pydantic_ai.result import ResultDataT_inv, ResultDataT
 from typing import Any, Optional, List
+from pydantic_ai.messages import ImageUrl
 
 from ...storage.configuration import Configuration
 
-from ..level_utilized.utility import agent_creator, summarize_message_prompt
+from ..level_utilized.utility import (
+    agent_creator, 
+    prepare_message_history, 
+    process_error_traceback,
+    format_response,
+    handle_compression_retry
+)
 
 import openai
 import traceback
-
 
 
 class CallManager:
@@ -22,56 +28,34 @@ class CallManager:
         llm_model: str = "openai/gpt-4o",
         system_prompt: Optional[Any] = None 
     ):
-        roulette_agent = agent_creator(response_format, tools, context, llm_model, system_prompt)
-        
-        message = [{
-            "type": "text",
-            "text": f"{prompt}"
-        }]
-
-        if images:
-            for image in images:
-                message.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{image}"
-                    }
-                })
         try:
-            if "claude-3-5-sonnet" in llm_model:
-                print("Tools", tools)
-                if "ComputerUse.*" in tools:
+            roulette_agent = agent_creator(response_format, tools, context, llm_model, system_prompt)
+            if isinstance(roulette_agent, dict) and "status_code" in roulette_agent:
+                return roulette_agent  # Return error from agent_creator
+
+            message_history = prepare_message_history(prompt, images, llm_model, tools)
+
+            try:
+                print("I sent the request1")
+                result = await roulette_agent.run(message_history)
+                print("I got the response1")
+                return format_response(result)
+            except openai.BadRequestError as e:
+                str_e = str(e)
+                if "400" in str_e:
+                    # Try to compress the message prompt
                     try:
-                        from ..level_utilized.cu import ComputerUse_screenshot_tool
-                        result_of_screenshot = ComputerUse_screenshot_tool()
-                        message.append(result_of_screenshot)
+                        result = await handle_compression_retry(
+                            prompt, images, tools, llm_model, 
+                            response_format, context, system_prompt
+                        )
+                        return format_response(result)
                     except Exception as e:
-                        print("Error", e)
-
-            print("I sent the request1")
-            result = await roulette_agent.run(message)
-            print("I got the response1")
-            usage = result.usage()
-
-            return {"status_code": 200, "result": result.data, "usage": {"input_tokens": usage.request_tokens, "output_tokens": usage.response_tokens}}
-        except AttributeError:
-            return roulette_agent
-        except openai.BadRequestError as e:
-            str_e = str(e)
-            if "400" in str_e:
-                # Try to compress the message prompt - this is not async
-                try:
-                    message[0]["text"] = summarize_message_prompt(message[0]["text"], llm_model)
-                    print("I sent the request2")
-                    result = await roulette_agent.run(message)
-                    print("I got the response2")
-                except Exception as e:
-                    traceback.print_exc()
-                    return {"status_code": 403, "detail": "Error processing request: " + str(e)}
-            else:
-                return {"status_code": 403, "detail": "Error processing request: " + str(e)}
-
-            usage = result.usage()
-            return {"status_code": 200, "result": result.data, "usage": {"input_tokens": usage.request_tokens, "output_tokens": usage.response_tokens}}
+                        traceback.print_exc()
+                        return process_error_traceback(e)
+                else:
+                    return process_error_traceback(e)
+        except Exception as e:
+            return process_error_traceback(e)
 
 Call = CallManager()
